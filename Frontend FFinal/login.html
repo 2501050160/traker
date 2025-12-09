@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - School Transport Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.6s ease;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.65);
+            z-index: -1;
+            backdrop-filter: blur(2px);
+        }
+
+        .video-background {
+            position: flex;
+            inset: 0;
+             z-index: -1.5; /* make it 2 to reduce opacity */
+            overflow: hidden;
+        }
+
+        .background-video {
+            width: 100%;
+            height: 100%;
+             border-radius: 10px;
+            object-fit: cover;
+        }
+
+        .intro-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            background: radial-gradient(circle at center, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.95));
+            z-index: 5;
+            transition: opacity 0.8s ease, visibility 0.8s ease;
+        }
+
+        .intro-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .intro-video-wrapper {
+            position: absolute;
+            inset: 0;
+        }
+
+        .intro-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .intro-caption {
+            position: relative;
+            margin-bottom: 90px;
+            color: #65a2f2;
+            font-size: 2rem;
+            letter-spacing: 0.08em;
+            z-index: 2;
+            text-transform: uppercase;
+        }
+
+        .intro-progress {
+            position: relative;
+            width: min(420px, 80vw);
+            height: 10px;
+            border-radius: 99px;
+            background: rgba(148, 163, 184, 0.35);
+            overflow: hidden;
+            margin-bottom: 60px;
+            z-index: 2;
+        }
+
+        .intro-progress-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(135deg, #22d3ee, orange);
+            transition: width 0.1s linear;
+        }
+
+        .top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 32px ;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .brand {
+            color: #f8fafc;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-size: 0.95rem;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+        }
+
+        .top-login-btn {
+            pointer-events: auto;
+            padding: 10px 20px;
+            border-radius: 999px;
+            border: 1px solid rgba(226, 232, 240, 0.6);
+            background: rgba(15, 23, 42, 0.45);
+            color: #f8fafc;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+            backdrop-filter: blur(6px);
+        }
+
+        .top-login-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .top-login-btn:not(:disabled):hover {
+            background: rgba(99, 102, 241, 0.65);
+            transform: translateY(-2px);
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            position: relative;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        body.login-open .login-container {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .close-login {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            border: none;
+            background: transparent;
+            font-size: 1.5rem;
+            line-height: 1;
+            cursor: pointer;
+            color: #94a3b8;
+            transition: color 0.2s;
+        }
+
+        .close-login:hover {
+            color: #475569;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            color: #1e293b;
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .login-header p {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #1e293b;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .user-type-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .user-type-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+            color: #64748b;
+        }
+
+        .user-type-btn.active {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+        }
+
+        .user-type-btn:hover {
+            border-color: #667eea;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        .demo-credentials {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #475569;
+        }
+
+        .demo-credentials h3 {
+            margin-bottom: 10px;
+            color: #1e293b;
+            font-size: 0.9rem;
+        }
+
+        .demo-credentials p {
+            margin: 5px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="video-background">
+        <video id="backgroundVideo" class="background-video" loop muted playsinline preload="auto">
+            <source src="media/background-loop.mp4" type="video/mp4">
+            <!-- Add your looping background video at media/background-loop.mp4 -->
+        </video>
+    </div>
+
+    <div class="intro-overlay" id="introOverlay">
+        <div class="intro-video-wrapper">
+            <video id="introVideo" class="intro-video" muted autoplay playsinline preload="auto">
+                <source src="media/intro-animation.mp4" type="video/mp4">
+                <!-- Add your 5-second intro animation video at media/intro-animation.mp4 -->
+            </video>
+        </div> 
+            <p class="intro-caption">Preparing Smart Drive Mate</p>
+        <div class="intro-progress">
+            <div class="intro-progress-fill" id="introProgress"></div>
+        </div>
+    </div>
+
+    <div class="top-bar">
+        <div class="brand">Smart Drive Mate</div>
+        <button class="top-login-btn" id="openLoginBtn" disabled>Login</button>
+    </div>
+
+    <div class="login-container" id="loginContainer">
+        <button class="close-login" id="closeLoginBtn" aria-label="Close login form">&times;</button>
+        <div class="login-header">
+            <h1>🚌 School Transport</h1>
+            <p>Smart Drive Mate - Login</p>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="user-type-selector">
+            <button class="user-type-btn active" data-type="admin">Admin</button>
+            <button class="user-type-btn" data-type="user">User</button>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="login-btn">Login</button>
+        </form>
+
+        <div class="demo-credentials">
+            <h3>Demo Credentials:</h3>
+            <p><strong>Admin:</strong> admin / admin123</p>
+            <p><strong>User:</strong> user / user123</p>
+        </div>
+    </div>
+
+    <script>
+        const INTRO_DURATION = 6000;
+        const introOverlay = document.getElementById('introOverlay');
+        const introVideo = document.getElementById('introVideo');
+        const backgroundVideo = document.getElementById('backgroundVideo');
+        const introProgress = document.getElementById('introProgress');
+        const openLoginBtn = document.getElementById('openLoginBtn');
+        const closeLoginBtn = document.getElementById('closeLoginBtn');
+        const loginContainer = document.getElementById('loginContainer');
+        let introComplete = false;
+        let progressTimer;
+
+        const playSafely = (video) => {
+            if (!video || typeof video.play !== 'function') return;
+            const playPromise = video.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch(() => {});
+            }
+        };
+
+        const openLogin = () => {
+            document.body.classList.add('login-open');
+        };
+
+        const closeLogin = () => {
+            document.body.classList.remove('login-open');
+        };
+
+        const startMainScene = () => {
+            if (introComplete) return;
+            introComplete = true;
+            if (introProgress) {
+                introProgress.style.width = '100%';
+            }
+            if (progressTimer) {
+                cancelAnimationFrame(progressTimer);
+                progressTimer = null;
+            }
+            introOverlay?.classList.add('hidden');
+            playSafely(backgroundVideo);
+            openLoginBtn.disabled = false;
+            openLogin();
+        };
+
+        const initVideoSequence = () => {
+            if (!introOverlay || !introVideo || !backgroundVideo) {
+                openLoginBtn.disabled = false;
+                openLogin();
+                return;
+            }
+
+            backgroundVideo.pause();
+            playSafely(introVideo);
+
+            const timer = setTimeout(startMainScene, INTRO_DURATION);
+            const start = performance.now();
+
+            const tick = (now) => {
+                if (introComplete) return;
+                const progress = Math.min((now - start) / INTRO_DURATION, 1);
+                if (introProgress) {
+                    introProgress.style.width = `${progress * 100}%`;
+                }
+                if (progress < 1) {
+                    progressTimer = requestAnimationFrame(tick);
+                }
+            };
+
+            progressTimer = requestAnimationFrame(tick);
+
+            introVideo.addEventListener('ended', startMainScene, { once: true });
+            introVideo.addEventListener('error', startMainScene, { once: true });
+            introOverlay.addEventListener('click', startMainScene, { once: true });
+
+            window.addEventListener('beforeunload', () => {
+                clearTimeout(timer);
+                if (progressTimer) cancelAnimationFrame(progressTimer);
+            }, { once: true });
+        };
+
+        window.addEventListener('load', initVideoSequence);
+
+        openLoginBtn?.addEventListener('click', openLogin);
+        closeLoginBtn?.addEventListener('click', closeLogin);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeLogin();
+            }
+        });
+
+        // Dummy credentials
+        const credentials = {
+            admin: {
+                username: 'admin',
+                password: 'admin123',
+                role: 'admin'
+            },
+            user: {
+                username: 'user',
+                password: 'user123',
+                role: 'user'
+            }
+        };
+
+        let selectedUserType = 'admin';
+
+        // User type selector
+        document.querySelectorAll('.user-type-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedUserType = btn.dataset.type;
+            });
+        });
+
+        // Login form handler
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('errorMessage');
+
+            // Get credentials based on selected user type
+            const creds = credentials[selectedUserType];
+
+            if (username === creds.username && password === creds.password) {
+                // Store authentication info
+                const authData = {
+                    username: username,
+                    role: creds.role,
+                    loginTime: new Date().toISOString()
+                };
+                sessionStorage.setItem('auth', JSON.stringify(authData));
+
+                // Redirect based on role
+                if (creds.role === 'admin') {
+                    // Check if user wants to go to controller or dashboard
+                    const target = new URLSearchParams(window.location.search).get('target') || 'dashboard';
+                    if (target === 'controller') {
+                        window.location.href = 'vehicle-controller.html';
+                    } else {
+                        window.location.href = 'transport-dashboard.html';
+                    }
+                } else {
+                    window.location.href = 'transport-dashboard.html';
+                }
+            } else {
+                errorMessage.textContent = 'Invalid username or password!';
+                errorMessage.classList.add('show');
+                setTimeout(() => {
+                    errorMessage.classList.remove('show');
+                }, 3000);
+            }
+        });
+
+        // Auto-fill demo credentials on click
+        document.querySelectorAll('.demo-credentials p').forEach(p => {
+            p.style.cursor = 'pointer';
+            p.addEventListener('click', () => {
+                const text = p.textContent;
+                if (text.includes('Admin')) {
+                    selectedUserType = 'admin';
+                    document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelector('[data-type="admin"]').classList.add('active');
+                    document.getElementById('username').value = 'admin';
+                    document.getElementById('password').value = 'admin123';
+                } else if (text.includes('User')) {
+                    selectedUserType = 'user';
+                    document.querySelectorAll('.user-type-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelector('[data-type="user"]').classList.add('active');
+                    document.getElementById('username').value = 'user';
+                    document.getElementById('password').value = 'user123';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
+

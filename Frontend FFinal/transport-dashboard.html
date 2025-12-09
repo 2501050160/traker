@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Transport Management - Smart Drive Mate</title>
+    <link rel="stylesheet" href="transport-styles.css">
+    <!-- IMPORTANT: Replace YOUR_API_KEY with your actual Google Maps API key -->
+    <!-- Get your API key from: https://console.cloud.google.com/ -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao&libraries=geometry,drawing,places,directions"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <h1>🚌 School Transport Management</h1>
+                <p class="subtitle">Smart Drive Mate - Real-time Vehicle Tracking</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" id="refreshBtn">🔄 Refresh</button>
+                <button class="btn btn-secondary" id="exportBtn">📊 Export Data</button>
+                <button class="btn btn-warning" id="controllerBtn">🎮 Open Controller</button>
+                <button class="btn" id="logoutBtn" style="background: #ef4444; color: white;">🚪 Logout</button>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="dashboard-grid">
+            <!-- Left Panel - Vehicle List & Controls -->
+            <aside class="left-panel">
+                <div class="panel-section">
+                    <h2>Active Vehicles</h2>
+                    <div class="vehicle-list" id="vehicleList">
+                        <!-- Vehicle cards will be dynamically generated -->
+                    </div>
+                </div>
+
+                <div class="panel-section" id="quickActionsSection">
+                    <h2>Quick Actions</h2>
+                    <div class="action-buttons">
+                        <button class="action-btn" id="engineLockBtn">🔒 Engine Lock</button>
+                        <button class="action-btn" id="geoFenceBtn">📍 Set Geo-Fence</button>
+                        <button class="action-btn" id="speedLimitBtn">⚡ Speed Limit</button>
+                    </div>
+                </div>
+                
+                <div class="panel-section" id="userBusSelection" style="display: none;">
+                    <h2>Select Bus to Track</h2>
+                    <div class="vehicle-list" id="userVehicleList">
+                        <!-- Vehicle selection for normal users -->
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Alerts & Notifications</h2>
+                    <div class="alerts-container" id="alertsContainer">
+                        <!-- Alerts will be dynamically generated -->
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Center Panel - Map -->
+            <main class="map-panel">
+                <div class="map-header">
+                    <h2>Live Vehicle Tracking</h2>
+                    <div class="map-controls">
+                        <button class="map-btn" id="centerMapBtn">📍 Center Map</button>
+                        <button class="map-btn" id="clearRouteBtn">🗑️ Clear Route</button>
+                        <button class="map-btn" id="clearGeoFenceBtn">🗺️ Clear Geo-Fences</button>
+                        <button class="map-btn" id="showRouteBtn">🛣️ Show Route</button>
+                    </div>
+                </div>
+                <div id="map" class="map-container"></div>
+            </main>
+
+            <!-- Right Panel - Vehicle Details -->
+            <aside class="right-panel">
+                <div class="panel-section">
+                    <h2>Vehicle Details</h2>
+                    <div class="vehicle-details" id="vehicleDetails">
+                        <div class="detail-placeholder">
+                            <p>Select a vehicle to view details</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Speed Analytics</h2>
+                    <div class="speed-analytics" id="speedAnalytics">
+                        <div class="speed-metric">
+                            <label>Current Speed</label>
+                            <div class="speed-value" id="currentSpeed">0 km/h</div>
+                        </div>
+                        <div class="speed-metric">
+                            <label>Top Speed</label>
+                            <div class="speed-value" id="topSpeed">0 km/h</div>
+                        </div>
+                        <div class="speed-metric">
+                            <label>Average Speed</label>
+                            <div class="speed-value" id="avgSpeed">0 km/h</div>
+                        </div>
+                        <div class="speed-metric">
+                            <label>Speed Status</label>
+                            <div class="speed-status" id="speedStatus">Normal</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Vehicle Status</h2>
+                    <div class="status-indicators" id="statusIndicators">
+                        <div class="status-item">
+                            <span class="status-label">Engine:</span>
+                            <span class="status-value" id="engineStatus">OFF</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Movement:</span>
+                            <span class="status-value" id="movementStatus">Stopped</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Geo-Fence:</span>
+                            <span class="status-value" id="geoFenceStatus">Inside</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Last Update:</span>
+                            <span class="status-value" id="lastUpdate">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Arrival Time Estimates</h2>
+                    <div class="arrival-time-table" id="arrivalTimeTable">
+                        <table class="time-table">
+                            <thead>
+                                <tr>
+                                    <th>Vehicle</th>
+                                    <th>ETA</th>
+                                    <th>Distance</th>
+                                    <th>Progress</th>
+                                </tr>
+                            </thead>
+                            <tbody id="arrivalTimeTableBody">
+                                <!-- Will be populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Modal for Geo-Fence -->
+        <div class="modal" id="geoFenceModal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Set Geo-Fence</h2>
+                <div class="form-group">
+                    <label>Fence Name:</label>
+                    <input type="text" id="fenceName" placeholder="e.g., School Zone">
+                </div>
+                <div class="form-group">
+                    <label>Radius (meters):</label>
+                    <input type="number" id="fenceRadius" value="500" min="100" max="5000">
+                </div>
+                <div class="form-group">
+                    <label>Center Point:</label>
+                    <div class="coordinate-inputs">
+                        <input type="number" id="fenceLat" placeholder="Latitude" step="0.000001">
+                        <input type="number" id="fenceLng" placeholder="Longitude" step="0.000001">
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="saveFenceBtn">Save Geo-Fence</button>
+            </div>
+        </div>
+
+        <!-- Modal for Speed Limit -->
+        <div class="modal" id="speedLimitModal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Set Speed Limit</h2>
+                <div class="form-group">
+                    <label>Speed Limit (km/h):</label>
+                    <input type="number" id="speedLimitValue" value="60" min="20" max="120">
+                </div>
+                <div class="form-group">
+                    <label>Alert Threshold (%):</label>
+                    <input type="number" id="alertThreshold" value="10" min="5" max="50">
+                </div>
+                <button class="btn btn-primary" id="saveSpeedLimitBtn">Save Speed Limit</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Authentication check
+        (function() {
+            const auth = sessionStorage.getItem('auth');
+            if (!auth) {
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            try {
+                const authData = JSON.parse(auth);
+                window.userRole = authData.role;
+                window.userName = authData.username;
+                
+                // Hide admin-only features for normal users
+                if (authData.role === 'user') {
+                    const controllerBtn = document.getElementById('controllerBtn');
+                    const exportBtn = document.getElementById('exportBtn');
+                    if (controllerBtn) controllerBtn.style.display = 'none';
+                    if (exportBtn) exportBtn.style.display = 'none';
+                    
+                    // Update header
+                    const headerContent = document.querySelector('.header-content');
+                    if (headerContent) {
+                        headerContent.innerHTML += `<p style="color: #10b981; margin-top: 5px;">👤 Logged in as: ${authData.username} (User)</p>`;
+                    }
+                } else {
+                    const headerContent = document.querySelector('.header-content');
+                    if (headerContent) {
+                        headerContent.innerHTML += `<p style="color: #2563eb; margin-top: 5px;">👤 Logged in as: ${authData.username} (Admin)</p>`;
+                    }
+                }
+                
+                // Add logout button handler
+                const logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.addEventListener('click', () => {
+                        sessionStorage.removeItem('auth');
+                        window.location.href = 'login.html';
+                    });
+                }
+            } catch (e) {
+                console.error('Error parsing auth data:', e);
+                window.location.href = 'login.html';
+            }
+        })();
+    </script>
+    <script src="transport-script.js"></script>
+</body>
+</html>
+

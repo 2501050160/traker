@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Controller - Smart Drive Mate</title>
+    <link rel="stylesheet" href="transport-styles.css">
+    <link rel="stylesheet" href="controller-styles.css">
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao&libraries=geometry,drawing,places,directions"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="controller-container">
+        <!-- Header -->
+        <header class="controller-header">
+            <div class="header-content">
+                <h1>🎮 Vehicle Controller</h1>
+                <p class="subtitle">Control Vehicle Movement, Speed & Path</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" id="loadExcelBtn">📂 Load from Excel</button>
+                <button class="btn btn-secondary" id="saveToExcelBtn">💾 Save to Excel</button>
+                <button class="btn btn-warning" id="dashboardBtn">📊 View Dashboard</button>
+                <button class="btn" id="logoutBtn" style="background: #ef4444; color: white;">🚪 Logout</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="controller-grid">
+            <!-- Left Panel - Vehicle Selection & Control -->
+            <aside class="control-panel">
+                <div class="panel-section">
+                    <h2>Select Vehicle</h2>
+                    <select id="vehicleSelect" class="vehicle-select">
+                        <option value="">-- Select Vehicle --</option>
+                        <option value="BUS-001">BUS-001 - School Bus 1</option>
+                        <option value="BUS-002">BUS-002 - School Bus 2</option>
+                        <option value="BUS-003">BUS-003 - School Bus 3</option>
+                    </select>
+                    <button class="control-btn" id="addVehicleBtn" style="margin-top: 0.75rem; background: #10b981;">➕ Add Custom Vehicle</button>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Speed Control</h2>
+                    <div class="control-group">
+                        <label>Current Speed: <span id="currentSpeedDisplay">0</span> km/h</label>
+                        <input type="range" id="speedSlider" min="0" max="80" value="0" step="5" class="slider">
+                        <div class="speed-buttons">
+                            <button class="speed-btn" data-speed="0">Stop</button>
+                            <button class="speed-btn" data-speed="20">20</button>
+                            <button class="speed-btn" data-speed="40">40</button>
+                            <button class="speed-btn" data-speed="60">60</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Movement Control</h2>
+                    <div class="movement-controls">
+                        <button class="control-btn btn-start" id="startBtn">▶️ Start</button>
+                        <button class="control-btn btn-stop" id="stopBtn">⏹️ Stop</button>
+                        <button class="control-btn btn-pause" id="pauseBtn">⏸️ Pause</button>
+                    </div>
+                    <div class="engine-control">
+                        <button class="control-btn btn-lock" id="engineLockBtn">🔒 Lock Engine</button>
+                        <button class="control-btn btn-unlock" id="engineUnlockBtn">🔓 Unlock Engine</button>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Route Management</h2>
+                    <div class="path-controls">
+                        <button class="control-btn" id="saveRouteBtn">💾 Save Current Route</button>
+                        <button class="control-btn" id="loadRouteBtn">📂 Load Saved Route</button>
+                        <button class="control-btn" id="loadPathBtn">🛣️ Load from Excel</button>
+                        <button class="control-btn" id="clearPathBtn">🗑️ Clear Path</button>
+                        <button class="control-btn" id="startPathBtn">▶️ Start Following Path</button>
+                        <button class="control-btn" id="stopPathBtn" style="background: #ef4444;">⏹️ Stop Path</button>
+                    </div>
+                    <div class="path-info" id="pathInfo">
+                        <p>No path loaded</p>
+                    </div>
+                    <div class="route-list" id="routeList" style="margin-top: 1rem; max-height: 200px; overflow-y: auto;">
+                        <h3 style="font-size: 0.9rem; margin-bottom: 0.5rem;">Saved Routes:</h3>
+                        <div id="savedRoutesList"></div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Speed Limit</h2>
+                    <div class="speed-limit-controls">
+                        <div class="form-group">
+                            <label>Speed Limit (km/h):</label>
+                            <input type="number" id="speedLimitInput" value="60" min="20" max="120" style="width: 100%; padding: 0.5rem;">
+                        </div>
+                        <button class="control-btn" id="setSpeedLimitBtn" style="width: 100%; background: #f59e0b;">⚡ Set Speed Limit</button>
+                        <div id="speedLimitStatus" style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);">
+                            Current: 60 km/h
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Position Control</h2>
+                    <div class="position-controls">
+                        <button class="control-btn" id="setPositionBtn" style="width: 100%; margin-bottom: 1rem; background: #2563eb;">📍 Click Map to Set Position</button>
+                        <div class="form-group">
+                            <label>Or Enter Coordinates:</label>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                <input type="number" id="manualLat" step="0.000001" placeholder="Lat">
+                                <input type="number" id="manualLng" step="0.000001" placeholder="Lng">
+                            </div>
+                            <button class="control-btn" id="setManualPositionBtn" style="width: 100%; margin-top: 0.5rem; background: #10b981;">✓ Set from Coordinates</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Vehicle Icon</h2>
+                    <div class="icon-controls">
+                        <input type="file" id="vehicleIconInput" accept="image/*" style="display: none;">
+                        <button class="control-btn" id="uploadIconBtn" style="width: 100%; background: #8b5cf6;">🖼️ Upload Vehicle Icon</button>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">Upload a small vehicle image (recommended: 64x64px)</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Center Panel - Map with Route -->
+            <main class="map-panel">
+                <div class="map-header">
+                    <h2>Route Planning & Control</h2>
+                    <div class="map-controls">
+                        <button class="map-btn" id="centerMapBtn">📍 Center</button>
+                        <button class="map-btn" id="clearMapBtn">🗑️ Clear</button>
+                        <button class="map-btn" id="drawRouteBtn">✏️ Draw Route</button>
+                    </div>
+                </div>
+                <div id="controllerMap" class="map-container"></div>
+                <div class="route-info" id="routeInfo">
+                    <h3>Route Information</h3>
+                    <div id="routeDetails"></div>
+                </div>
+            </main>
+
+            <!-- Right Panel - Status & Logs -->
+            <aside class="status-panel">
+                <div class="panel-section">
+                    <h2>Vehicle Status</h2>
+                    <div class="status-display" id="statusDisplay">
+                        <div class="status-item">
+                            <span class="status-label">Vehicle:</span>
+                            <span class="status-value" id="statusVehicle">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Status:</span>
+                            <span class="status-value" id="statusStatus">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Speed:</span>
+                            <span class="status-value" id="statusSpeed">0 km/h</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Engine:</span>
+                            <span class="status-value" id="statusEngine">OFF</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Position:</span>
+                            <span class="status-value" id="statusPosition">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Path Points:</span>
+                            <span class="status-value" id="statusPathPoints">0</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Path Progress:</span>
+                            <span class="status-value" id="statusPathProgress">0%</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Last Update:</span>
+                            <span class="status-value" id="statusLastUpdate">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Arrival Time Estimates</h2>
+                    <div class="arrival-time-table">
+                        <table class="time-table">
+                            <thead>
+                                <tr>
+                                    <th>Vehicle</th>
+                                    <th>ETA</th>
+                                    <th>Distance</th>
+                                    <th>Progress</th>
+                                </tr>
+                            </thead>
+                            <tbody id="controllerArrivalTimeTableBody">
+                                <!-- Will be populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Control Logs</h2>
+                    <div class="logs-container" id="logsContainer">
+                        <!-- Logs will be added here -->
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script>
+        // Authentication check - Controller is admin-only
+        (function() {
+            const auth = sessionStorage.getItem('auth');
+            if (!auth) {
+                window.location.href = 'login.html?target=controller';
+                return;
+            }
+            
+            try {
+                const authData = JSON.parse(auth);
+                if (authData.role !== 'admin') {
+                    alert('Access denied! Controller is only available for administrators.');
+                    window.location.href = 'transport-dashboard.html';
+                    return;
+                }
+                
+                window.userRole = authData.role;
+                window.userName = authData.username;
+                
+                // Update header
+                const headerContent = document.querySelector('.header-content');
+                if (headerContent) {
+                    headerContent.innerHTML += `<p style="color: #2563eb; margin-top: 5px;">👤 Logged in as: ${authData.username} (Admin)</p>`;
+                }
+                
+                // Add logout button handler
+                const logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.addEventListener('click', () => {
+                        sessionStorage.removeItem('auth');
+                        window.location.href = 'login.html?target=controller';
+                    });
+                }
+            } catch (e) {
+                console.error('Error parsing auth data:', e);
+                window.location.href = 'login.html?target=controller';
+            }
+        })();
+    </script>
+    <script src="controller-script.js"></script>
+</body>
+</html>
+
+
