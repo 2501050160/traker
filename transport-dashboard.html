@@ -251,9 +251,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>School Transport Management - Smart Drive Mate</title>
     <link rel="stylesheet" href="transport-styles.css">
-    <!-- IMPORTANT: Replace YOUR_API_KEY with your actual Google Maps API key -->
-    <!-- Get your API key from: https://console.cloud.google.com/ -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao&libraries=geometry,drawing,places,directions"></script>
+    <!-- Map (no API key): Leaflet + OpenStreetMap -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>

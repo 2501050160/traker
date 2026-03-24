@@ -22,6 +22,11 @@ class VehicleController {
         this.stopTimer = null;
         this.roadSnappedPath = null; // Store road-snapped path from Directions Service
         this.roadPathIndex = 0; // Current index in road-snapped path
+        this.drawLayer = null;
+        this.drawControl = null;
+        this.drawHandler = null;
+        this.isSettingPosition = false;
+        this.lastManualMoveHeadingDeg = 45; // used when moving without a route
         
         this.init();
     }
@@ -39,49 +44,31 @@ class VehicleController {
 
     initMap() {
         const defaultCenter = { lat: 17.6868, lng: 83.2185 };
-        
-        this.map = new google.maps.Map(document.getElementById('controllerMap'), {
-            zoom: 13,
-            center: defaultCenter,
-            mapTypeId: 'roadmap',
-            styles: [
-                {
-                    featureType: 'all',
-                    elementType: 'geometry',
-                    stylers: [{ color: '#1e293b' }]
-                },
-                {
-                    featureType: 'all',
-                    elementType: 'labels.text.fill',
-                    stylers: [{ color: '#94a3b8' }]
-                }
-            ]
-        });
+        this.map = L.map('controllerMap', { zoomControl: true }).setView(
+            [defaultCenter.lat, defaultCenter.lng],
+            13
+        );
 
-        // Initialize Directions Service for road snapping
-        this.directionsService = new google.maps.DirectionsService();
-        this.directionsRenderer = new google.maps.DirectionsRenderer({
-            map: this.map,
-            suppressMarkers: true,
-            polylineOptions: {
-                strokeColor: '#4A90E2',
-                strokeWeight: 4,
-                strokeOpacity: 0.8
-            }
-        });
+        // OSM tiles (no API key)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(this.map);
+
+        // Drawing layer
+        this.drawLayer = new L.FeatureGroup();
+        this.map.addLayer(this.drawLayer);
 
         // Create coordinate display element
         this.createCoordinateDisplay();
         
         // Add mouse move listener for coordinate display
-        this.map.addListener('mousemove', (e) => {
-            this.updateCoordinateDisplay(e.latLng);
-        });
+        this.map.on('mousemove', (e) => this.updateCoordinateDisplay(e.latlng));
 
         // Add click listener for setting position
-        this.map.addListener('click', (e) => {
+        this.map.on('click', (e) => {
             if (this.isSettingPosition && this.selectedVehicle) {
-                this.setPositionFromMap(e.latLng);
+                this.setPositionFromMap(e.latlng);
             } else if (this.isSettingPosition) {
                 this.showAlert('warning', 'Please select a vehicle first!');
             }
@@ -116,8 +103,8 @@ class VehicleController {
     updateCoordinateDisplay(latLng) {
         if (this.coordinateDisplay && latLng) {
             this.coordinateDisplay.innerHTML = `
-                <div><strong>Lat:</strong> ${latLng.lat().toFixed(6)}</div>
-                <div><strong>Lng:</strong> ${latLng.lng().toFixed(6)}</div>
+                <div><strong>Lat:</strong> ${latLng.lat.toFixed(6)}</div>
+                <div><strong>Lng:</strong> ${latLng.lng.toFixed(6)}</div>
                 ${this.isSettingPosition ? '<div style="color: #10b981; margin-top: 5px;">Click to set position</div>' : ''}
             `;
         }
@@ -131,23 +118,22 @@ class VehicleController {
         }
 
         // Update vehicle position
-        this.selectedVehicle.lat = latLng.lat();
-        this.selectedVehicle.lng = latLng.lng();
+        this.selectedVehicle.lat = latLng.lat;
+        this.selectedVehicle.lng = latLng.lng;
         
         // Update manual position inputs
-        document.getElementById('manualLat').value = latLng.lat().toFixed(6);
-        document.getElementById('manualLng').value = latLng.lng().toFixed(6);
+        document.getElementById('manualLat').value = latLng.lat.toFixed(6);
+        document.getElementById('manualLng').value = latLng.lng.toFixed(6);
 
         // Update marker
         if (this.markers.vehicle) {
-            this.markers.vehicle.setPosition(latLng);
+            this.markers.vehicle.setLatLng([latLng.lat, latLng.lng]);
         } else {
             this.addVehicleMarker();
         }
 
         // Center map on new position
-        this.map.setCenter(latLng);
-        this.map.setZoom(15);
+        this.map.setView([latLng.lat, latLng.lng], 15);
         
         this.updateStatusDisplay();
         this.saveToLocalStorage();
@@ -158,8 +144,8 @@ class VehicleController {
         document.getElementById('setPositionBtn').textContent = '📍 Click Map to Set Position';
         document.getElementById('setPositionBtn').style.background = '#2563eb';
         
-        this.showAlert('success', `Position set! Lat: ${latLng.lat().toFixed(6)}, Lng: ${latLng.lng().toFixed(6)}`);
-        this.addLog('success', `Position set to ${latLng.lat().toFixed(6)}, ${latLng.lng().toFixed(6)}`);
+        this.showAlert('success', `Position set! Lat: ${latLng.lat.toFixed(6)}, Lng: ${latLng.lng.toFixed(6)}`);
+        this.addLog('success', `Position set to ${latLng.lat.toFixed(6)}, ${latLng.lng.toFixed(6)}`);
         
         // If path exists, ask if user wants to start
         if (this.currentPath.length > 0) {
@@ -327,7 +313,7 @@ class VehicleController {
                 this.selectedVehicle.lat = lat;
                 this.selectedVehicle.lng = lng;
                 if (this.markers.vehicle) {
-                    this.markers.vehicle.setPosition({ lat, lng });
+                    this.markers.vehicle.setLatLng([lat, lng]);
                 }
                 this.updateStatusDisplay();
                 this.broadcastVehicleUpdate();
@@ -341,7 +327,7 @@ class VehicleController {
                 this.selectedVehicle.lat = lat;
                 this.selectedVehicle.lng = lng;
                 if (this.markers.vehicle) {
-                    this.markers.vehicle.setPosition({ lat, lng });
+                    this.markers.vehicle.setLatLng([lat, lng]);
                 }
                 this.updateStatusDisplay();
                 this.broadcastVehicleUpdate();
@@ -435,7 +421,7 @@ class VehicleController {
 
         // Remove existing vehicle marker
         if (this.markers.vehicle) {
-            this.markers.vehicle.setMap(null);
+            try { this.map.removeLayer(this.markers.vehicle); } catch (_) {}
         }
 
         // Use custom icon if available, otherwise use default car icon
@@ -443,11 +429,11 @@ class VehicleController {
         
         if (this.customVehicleIcon) {
             // Use uploaded custom icon
-            iconConfig = {
-                url: this.customVehicleIcon,
-                scaledSize: new google.maps.Size(40, 40),
-                anchor: new google.maps.Point(20, 20)
-            };
+            iconConfig = L.icon({
+                iconUrl: this.customVehicleIcon,
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
         } else {
             // Use web-based car icon with SVG
             const statusColor = this.selectedVehicle.status === 'overspeed' ? '#ef4444' : 
@@ -459,21 +445,17 @@ class VehicleController {
                 </svg>
             `;
             
-            iconConfig = {
-                url: `data:image/svg+xml;base64,${btoa(svgIcon)}`,
-                scaledSize: new google.maps.Size(40, 40),
-                anchor: new google.maps.Point(20, 20)
-            };
+            iconConfig = L.icon({
+                iconUrl: `data:image/svg+xml;base64,${btoa(svgIcon)}`,
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
         }
 
-        this.markers.vehicle = new google.maps.Marker({
-            position: { lat: this.selectedVehicle.lat, lng: this.selectedVehicle.lng },
-            map: this.map,
+        this.markers.vehicle = L.marker([this.selectedVehicle.lat, this.selectedVehicle.lng], {
             title: this.selectedVehicle.name,
-            icon: iconConfig,
-            zIndex: 1000,
-            animation: this.selectedVehicle.status === 'moving' ? google.maps.Animation.BOUNCE : null
-        });
+            icon: iconConfig
+        }).addTo(this.map);
     }
 
     handleIconUpload(event) {
@@ -517,6 +499,15 @@ class VehicleController {
         
         // Broadcast to dashboard
         this.broadcastVehicleUpdate();
+
+        // If not route-following, move based on speed
+        if (!this.pathFollowing) {
+            if (speed > 0 && this.selectedVehicle.engineStatus !== 'locked') {
+                this.startManualMovementLoop();
+            } else {
+                this.stopManualMovementLoop();
+            }
+        }
     }
 
     startVehicle() {
@@ -544,6 +535,10 @@ class VehicleController {
         this.broadcastVehicleUpdate();
         this.showAlert('success', `Vehicle ${this.selectedVehicle.id} started`);
         this.addLog('success', `Vehicle ${this.selectedVehicle.id} started`);
+
+        if (!this.pathFollowing && this.selectedVehicle.speed > 0) {
+            this.startManualMovementLoop();
+        }
     }
 
     stopVehicle() {
@@ -562,6 +557,7 @@ class VehicleController {
         if (this.pathFollowing) {
             this.pathFollowing = false;
         }
+        this.stopManualMovementLoop();
 
         this.updateStatusDisplay();
         this.saveToLocalStorage();
@@ -577,6 +573,7 @@ class VehicleController {
         }
 
         this.selectedVehicle.status = 'paused';
+        this.stopManualMovementLoop();
         this.updateStatusDisplay();
         this.broadcastVehicleUpdate();
         this.addLog('info', `Vehicle ${this.selectedVehicle.id} paused`);
@@ -599,6 +596,7 @@ class VehicleController {
             this.pathFollowing = false;
             this.showAlert('warning', 'Path following stopped - Engine locked');
         }
+        this.stopManualMovementLoop();
 
         this.updateStatusDisplay();
         this.saveToLocalStorage();
@@ -618,6 +616,10 @@ class VehicleController {
         this.saveToLocalStorage();
         this.broadcastVehicleUpdate();
         this.addLog('success', `Engine unlocked for ${this.selectedVehicle.id}`);
+
+        if (!this.pathFollowing && this.selectedVehicle.speed > 0) {
+            this.startManualMovementLoop();
+        }
     }
 
     loadPathFromExcel() {
@@ -686,77 +688,43 @@ class VehicleController {
     }
 
     drawPathOnMap() {
-        if (this.directionsRenderer) {
-            this.directionsRenderer.setDirections({ routes: [] });
-        }
         if (this.routePolyline) {
-            this.routePolyline.setMap(null);
+            try { this.map.removeLayer(this.routePolyline); } catch (_) {}
+            this.routePolyline = null;
         }
 
         if (this.currentPath.length < 2) return;
+        
+        // Try to snap to roads via OSRM (no key). Fallback to straight polyline.
+        this.getOsrmRouteCoords(this.currentPath)
+            .then((coords) => {
+                if (coords && coords.length > 1) {
+                    this.roadSnappedPath = coords.map(ll => ({ lat: ll.lat, lng: ll.lng }));
+                    const latLngs = coords.map(ll => [ll.lat, ll.lng]);
+                    this.routePolyline = L.polyline(latLngs, {
+                        color: '#4A90E2',
+                        weight: 4,
+                        opacity: 0.8
+                    }).addTo(this.map);
 
-        // Use Directions Service to render road-snapped path
-        const waypoints = [];
-        for (let i = 1; i < this.currentPath.length - 1; i++) {
-            waypoints.push({
-                location: new google.maps.LatLng(this.currentPath[i].lat, this.currentPath[i].lng),
-                stopover: false
-            });
-        }
+                    this.currentPathIndex = 0;
+                    this.roadPathIndex = 0;
 
-        const request = {
-            origin: new google.maps.LatLng(this.currentPath[0].lat, this.currentPath[0].lng),
-            destination: new google.maps.LatLng(
-                this.currentPath[this.currentPath.length - 1].lat,
-                this.currentPath[this.currentPath.length - 1].lng
-            ),
-            waypoints: waypoints,
-            travelMode: google.maps.TravelMode.DRIVING,
-            optimizeWaypoints: false
-        };
-
-        this.directionsService.route(request, (result, status) => {
-            if (status === 'OK') {
-                this.directionsRenderer.setDirections(result);
-                
-                // Extract road-snapped path points for vehicle to follow
-                this.roadSnappedPath = [];
-                result.routes[0].legs.forEach((leg, legIndex) => {
-                    leg.steps.forEach((step, stepIndex) => {
-                        step.path.forEach((point) => {
-                            this.roadSnappedPath.push({
-                                lat: point.lat(),
-                                lng: point.lng()
-                            });
-                        });
-                    });
-                });
-                
-                // Reset path index to start from beginning
-                this.currentPathIndex = 0;
-                this.roadPathIndex = 0;
-                
-                // Fit bounds to show entire route
-                const bounds = new google.maps.LatLngBounds();
-                result.routes[0].legs.forEach(leg => {
-                    bounds.extend(leg.start_location);
-                    bounds.extend(leg.end_location);
-                });
-                this.map.fitBounds(bounds);
-            } else {
-                // Fallback to simple polyline if directions fail
+                    this.map.fitBounds(L.latLngBounds(latLngs), { padding: [20, 20] });
+                } else {
+                    throw new Error('No OSRM route');
+                }
+            })
+            .catch(() => {
                 this.roadSnappedPath = null;
-                const routePath = this.currentPath.map(p => ({ lat: p.lat, lng: p.lng }));
-                this.routePolyline = new google.maps.Polyline({
-                    path: routePath,
-                    geodesic: true,
-                    strokeColor: '#4A90E2',
-                    strokeOpacity: 0.8,
-                    strokeWeight: 4,
-                    map: this.map
-                });
-            }
-        });
+                const latLngs = this.currentPath.map(p => [p.lat, p.lng]);
+                this.routePolyline = L.polyline(latLngs, {
+                    color: '#4A90E2',
+                    weight: 4,
+                    opacity: 0.8
+                }).addTo(this.map);
+                this.map.fitBounds(L.latLngBounds(latLngs), { padding: [20, 20] });
+            });
 
         // Add markers
         if (this.currentPath.length > 0) {
@@ -764,58 +732,36 @@ class VehicleController {
             const end = this.currentPath[this.currentPath.length - 1];
             
             if (!this.markers.start) {
-                this.markers.start = new google.maps.Marker({
-                    position: { lat: start.lat, lng: start.lng },
-                    map: this.map,
-                    title: 'Start',
-                    icon: {
-                        path: google.maps.SymbolPath.CIRCLE,
-                        scale: 12,
-                        fillColor: '#10b981',
-                        fillOpacity: 1,
-                        strokeColor: 'white',
-                        strokeWeight: 2
-                    },
-                    label: { text: 'S', color: 'white', fontWeight: 'bold' }
-                });
+                this.markers.start = L.circleMarker([start.lat, start.lng], {
+                    radius: 10,
+                    color: 'white',
+                    weight: 2,
+                    fillColor: '#10b981',
+                    fillOpacity: 1
+                }).addTo(this.map).bindTooltip('S', { permanent: true, direction: 'center' });
             }
             
             if (!this.markers.end) {
-                this.markers.end = new google.maps.Marker({
-                    position: { lat: end.lat, lng: end.lng },
-                    map: this.map,
-                    title: 'Destination',
-                    icon: {
-                        path: google.maps.SymbolPath.CIRCLE,
-                        scale: 12,
-                        fillColor: '#ef4444',
-                        fillOpacity: 1,
-                        strokeColor: 'white',
-                        strokeWeight: 2
-                    },
-                    label: { text: 'E', color: 'white', fontWeight: 'bold' }
-                });
+                this.markers.end = L.circleMarker([end.lat, end.lng], {
+                    radius: 10,
+                    color: 'white',
+                    weight: 2,
+                    fillColor: '#ef4444',
+                    fillOpacity: 1
+                }).addTo(this.map).bindTooltip('E', { permanent: true, direction: 'center' });
             }
-        }
-
-        // Fit bounds
-        if (this.currentPath.length > 0) {
-            const bounds = new google.maps.LatLngBounds();
-            this.currentPath.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
-            this.map.fitBounds(bounds);
         }
     }
 
     clearPath() {
         if (this.routePolyline) {
-            this.routePolyline.setMap(null);
+            try { this.map.removeLayer(this.routePolyline); } catch (_) {}
             this.routePolyline = null;
         }
-        if (this.directionsRenderer) {
-            this.directionsRenderer.setDirections({ routes: [] });
-        }
         Object.values(this.markers).forEach(m => {
-            if (m) m.setMap(null);
+            if (m) {
+                try { this.map.removeLayer(m); } catch (_) {}
+            }
         });
         this.markers = {};
         this.currentPath = [];
@@ -839,6 +785,9 @@ class VehicleController {
             this.addLog('warning', 'Please select a vehicle first');
             return;
         }
+
+        // Route-following owns movement updates
+        this.stopManualMovementLoop();
 
         // Ensure we have a road-snapped path
         if (!this.roadSnappedPath || this.roadSnappedPath.length === 0) {
@@ -1208,20 +1157,12 @@ class VehicleController {
             
             // Update marker position and rotation
             if (this.markers.vehicle) {
-                this.markers.vehicle.setPosition({ lat: currentLat, lng: currentLng });
-                // Update icon rotation if using SVG (for future enhancement)
-                const icon = this.markers.vehicle.getIcon();
-                if (icon && icon.path) {
-                    this.markers.vehicle.setIcon({
-                        ...icon,
-                        rotation: bearing
-                    });
-                }
+                this.markers.vehicle.setLatLng([currentLat, currentLng]);
             }
             
             // Update map center to follow vehicle smoothly
             if (this.map && currentStep % 3 === 0) {
-                this.map.setCenter({ lat: currentLat, lng: currentLng });
+                this.map.panTo([currentLat, currentLng], { animate: false });
             }
             
             // Update status and broadcast more frequently
@@ -1367,19 +1308,12 @@ class VehicleController {
 
             // Update marker
             if (this.markers.vehicle) {
-                this.markers.vehicle.setPosition({ lat: currentLat, lng: currentLng });
-                const icon = this.markers.vehicle.getIcon();
-                if (icon && icon.path) {
-                    this.markers.vehicle.setIcon({
-                        ...icon,
-                        rotation: bearing
-                    });
-                }
+                this.markers.vehicle.setLatLng([currentLat, currentLng]);
             }
 
             // Update map center periodically
             if (this.map && currentStep % 5 === 0) {
-                this.map.setCenter({ lat: currentLat, lng: currentLng });
+                this.map.panTo([currentLat, currentLng], { animate: false });
             }
 
             // Broadcast updates
@@ -1427,7 +1361,7 @@ class VehicleController {
         
         // Update marker
         if (this.markers.vehicle) {
-            this.markers.vehicle.setPosition({ lat, lng });
+            this.markers.vehicle.setLatLng([lat, lng]);
         } else {
             this.addVehicleMarker();
         }
@@ -1447,8 +1381,7 @@ class VehicleController {
 
     centerMap() {
         if (this.selectedVehicle) {
-            this.map.setCenter({ lat: this.selectedVehicle.lat, lng: this.selectedVehicle.lng });
-            this.map.setZoom(15);
+            this.map.setView([this.selectedVehicle.lat, this.selectedVehicle.lng], 15);
         }
     }
 
@@ -1465,62 +1398,70 @@ class VehicleController {
 
         this.drawingMode = true;
         this.drawnPath = [];
-        
-        // Initialize drawing manager
-        if (!this.drawingManager) {
-            this.drawingManager = new google.maps.drawing.DrawingManager({
-                drawingMode: google.maps.drawing.OverlayType.POLYLINE,
-                drawingControl: false,
-                polylineOptions: {
-                    strokeColor: '#FF0000',
-                    strokeWeight: 3,
-                    strokeOpacity: 0.6,
-                    clickable: false,
-                    editable: true
-                }
+
+        if (!this.drawControl) {
+            this.drawControl = new L.Control.Draw({
+                draw: {
+                    polyline: { shapeOptions: { color: '#FF0000', weight: 3, opacity: 0.6 } },
+                    polygon: false,
+                    rectangle: false,
+                    circle: false,
+                    circlemarker: false,
+                    marker: false
+                },
+                edit: { featureGroup: this.drawLayer, edit: true, remove: true }
             });
-            this.drawingManager.setMap(this.map);
+            this.map.addControl(this.drawControl);
+
+            this.map.on(L.Draw.Event.CREATED, (event) => {
+                if (event.layerType !== 'polyline') return;
+                const layer = event.layer;
+                this.drawLayer.addLayer(layer);
+
+                const latLngs = layer.getLatLngs();
+                this.drawnPath = latLngs.map((ll, index) => ({
+                    lat: ll.lat,
+                    lng: ll.lng,
+                    order: index + 1
+                }));
+
+                this.snapToRoads(this.drawnPath);
+                this.drawingMode = false;
+                if (this.drawHandler) {
+                    try { this.drawHandler.disable(); } catch (_) {}
+                    this.drawHandler = null;
+                }
+                document.getElementById('drawRouteBtn').textContent = '✏️ Draw Route';
+                this.addLog('success', `Path drawn with ${this.drawnPath.length} points. Snapping to roads...`);
+            });
         }
 
-        // Set drawing mode to polyline
-        this.drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYLINE);
-        
-        // Listen for polyline completion
-        google.maps.event.addListener(this.drawingManager, 'overlaycomplete', (event) => {
-            if (event.type === google.maps.drawing.OverlayType.POLYLINE) {
-                const polyline = event.overlay;
-                const path = polyline.getPath();
-                
-                // Get all points from the drawn path
-                this.drawnPath = [];
-                path.forEach((latLng, index) => {
-                    this.drawnPath.push({
-                        lat: latLng.lat(),
-                        lng: latLng.lng(),
-                        order: index + 1
-                    });
-                });
-
-                // Snap to roads using Directions Service
-                this.snapToRoads(this.drawnPath);
-                
-                // Disable drawing mode
-                this.drawingManager.setDrawingMode(null);
-                this.drawingMode = false;
-                
-                this.addLog('success', `Path drawn with ${this.drawnPath.length} points. Snapping to roads...`);
+        // Start drawing immediately when button is clicked
+        try {
+            if (this.drawHandler) {
+                this.drawHandler.disable();
             }
-        });
+            this.drawHandler = new L.Draw.Polyline(this.map, {
+                shapeOptions: { color: '#FF0000', weight: 3, opacity: 0.6 }
+            });
+            this.drawHandler.enable();
+        } catch (e) {
+            this.drawingMode = false;
+            this.addLog('error', 'Drawing tools failed to initialize. Please refresh the page.');
+            this.showAlert('error', 'Drawing tools failed to initialize. Please refresh the page.');
+            return;
+        }
 
         this.addLog('info', 'Drawing mode enabled - Draw a path on the map');
-        document.getElementById('drawRouteBtn').textContent = '✓ Finish Drawing';
+        document.getElementById('drawRouteBtn').textContent = '✖️ Cancel Drawing';
     }
 
     disableRouteDrawing() {
-        if (this.drawingManager) {
-            this.drawingManager.setDrawingMode(null);
-        }
         this.drawingMode = false;
+        if (this.drawHandler) {
+            try { this.drawHandler.disable(); } catch (_) {}
+            this.drawHandler = null;
+        }
         document.getElementById('drawRouteBtn').textContent = '✏️ Draw Route';
         this.addLog('info', 'Drawing mode disabled');
     }
@@ -1531,83 +1472,43 @@ class VehicleController {
             return;
         }
 
-        // Use Directions Service to get route along roads
-        const waypoints = [];
-        for (let i = 1; i < pathPoints.length - 1; i++) {
-            waypoints.push({
-                location: new google.maps.LatLng(pathPoints[i].lat, pathPoints[i].lng),
-                stopover: false
-            });
-        }
+        this.getOsrmRouteCoords(pathPoints)
+            .then((coords) => {
+                if (!coords || coords.length < 2) throw new Error('No OSRM coords');
 
-        const request = {
-            origin: new google.maps.LatLng(pathPoints[0].lat, pathPoints[0].lng),
-            destination: new google.maps.LatLng(
-                pathPoints[pathPoints.length - 1].lat,
-                pathPoints[pathPoints.length - 1].lng
-            ),
-            waypoints: waypoints,
-            travelMode: google.maps.TravelMode.DRIVING,
-            optimizeWaypoints: false
-        };
-
-        this.directionsService.route(request, (result, status) => {
-            if (status === 'OK') {
-                // Render the route
-                this.directionsRenderer.setDirections(result);
-                
-                // Extract snapped path points
-                const route = result.routes[0];
-                const snappedPath = [];
-                
-                route.legs.forEach((leg, legIndex) => {
-                    leg.steps.forEach((step, stepIndex) => {
-                        step.path.forEach((point, pointIndex) => {
-                            snappedPath.push({
-                                lat: point.lat(),
-                                lng: point.lng(),
-                                order: snappedPath.length + 1
-                            });
-                        });
-                    });
-                });
-
-                // Update current path with snapped coordinates
-                this.currentPath = snappedPath.map((point, index) => ({
-                    lat: point.lat,
-                    lng: point.lng,
+                this.currentPath = coords.map((ll, index) => ({
+                    lat: ll.lat,
+                    lng: ll.lng,
                     order: index + 1,
-                    speed: 40, // Default speed
+                    speed: 40,
                     stopDuration: 0,
-                    description: index === 0 ? 'Start Point' : 
-                                index === snappedPath.length - 1 ? 'Destination' : 
-                                `Waypoint ${index}`
+                    description: index === 0 ? 'Start Point' :
+                        index === coords.length - 1 ? 'Destination' :
+                            `Waypoint ${index}`
                 }));
 
+                this.drawPathOnMap();
                 this.updatePathInfo();
                 this.addLog('success', `Path snapped to roads with ${this.currentPath.length} points`);
-                
-                // Save to localStorage for dashboard (in format expected by dashboard)
+
                 this.savePathToLocalStorage();
-                
-                // Trigger storage event to notify dashboard
                 window.dispatchEvent(new Event('storage'));
-            } else {
-                this.addLog('error', 'Failed to snap path to roads: ' + status);
-                // Fallback: use original path
+            })
+            .catch(() => {
+                this.addLog('error', 'Failed to snap path to roads. Using direct path.');
                 this.currentPath = this.drawnPath.map((point, index) => ({
                     lat: point.lat,
                     lng: point.lng,
                     order: index + 1,
                     speed: 40,
                     stopDuration: 0,
-                    description: index === 0 ? 'Start Point' : 
-                                index === this.drawnPath.length - 1 ? 'Destination' : 
-                                `Waypoint ${index}`
+                    description: index === 0 ? 'Start Point' :
+                        index === this.drawnPath.length - 1 ? 'Destination' :
+                            `Waypoint ${index}`
                 }));
+                this.drawPathOnMap();
                 this.updatePathInfo();
-            }
-        });
+            });
     }
 
     savePathToLocalStorage() {
@@ -1685,30 +1586,29 @@ class VehicleController {
         
         // Update vehicle marker position and icon
         if (this.markers.vehicle) {
-            this.markers.vehicle.setPosition({ lat: v.lat, lng: v.lng });
+            this.markers.vehicle.setLatLng([v.lat, v.lng]);
             
             // Update icon if not using custom icon
             if (!this.customVehicleIcon) {
-                const carPath = 'M17.5,5c-0.276,0-0.5,0.224-0.5,0.5v1.5H3v-1.5C3,5.224,2.776,5,2.5,5S2,5.224,2,5.5V7H1v8h1v0.5 C3,15.776,3.224,16,3.5,16S4,15.776,4,15.5V15h12v0.5c0,0.276,0.224,0.5,0.5,0.5S17,15.776,17,15.5V15h1V7h-1V5.5 C17,5.224,16.776,5,16.5,5z M4,12.5C4,13.327,3.327,14,2.5,14S1,13.327,1,12.5S1.673,11,2.5,11S4,11.673,4,12.5z M17,12.5 c0,0.827,0.673,1.5,1.5,1.5S20,13.327,20,12.5S19.327,11,18.5,11S17,11.673,17,12.5z';
                 const fillColor = v.status === 'moving' ? '#10b981' : 
                                  v.status === 'stopped' ? '#6b7280' : '#ef4444';
-                this.markers.vehicle.setIcon({
-                    path: carPath,
-                    fillColor: fillColor,
-                    fillOpacity: 1,
-                    strokeColor: '#ffffff',
-                    strokeWeight: 2,
-                    scale: 1.5,
-                    rotation: 0,
-                    anchor: new google.maps.Point(10, 10)
-                });
+                const svgIcon = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24">
+                        <path fill="${fillColor}" d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                    </svg>
+                `;
+                this.markers.vehicle.setIcon(L.icon({
+                    iconUrl: `data:image/svg+xml;base64,${btoa(svgIcon)}`,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
+                }));
             }
-            
-            // Update animation
-            if (v.status === 'moving') {
-                this.markers.vehicle.setAnimation(google.maps.Animation.BOUNCE);
-            } else {
-                this.markers.vehicle.setAnimation(null);
+
+            // Apply animation class based on status
+            const el = this.markers.vehicle.getElement?.();
+            if (el) {
+                el.classList.remove('vehicle-moving', 'vehicle-stopped');
+                el.classList.add(v.status === 'moving' ? 'vehicle-moving' : 'vehicle-stopped');
             }
         }
     }
@@ -2019,6 +1919,7 @@ class VehicleController {
             this.updateStatusDisplay();
             this.broadcastVehicleUpdate();
         }
+        this.stopManualMovementLoop();
         this.showAlert('info', 'Path following stopped');
         this.addLog('info', 'Path following stopped by user');
     }
@@ -2286,6 +2187,73 @@ class VehicleController {
         
         this.showAlert('success', `Route "${route.routeName}" assigned to ${vehicle.id}`);
         this.addLog('success', `Route "${route.routeName}" assigned to ${vehicle.id}`);
+    }
+
+    async getOsrmRouteCoords(points) {
+        try {
+            if (!points || points.length < 2) return null;
+            const coordsStr = points.map(p => `${p.lng},${p.lat}`).join(';');
+            const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+            const res = await fetch(url);
+            if (!res.ok) return null;
+            const data = await res.json();
+            const line = data?.routes?.[0]?.geometry?.coordinates;
+            if (!Array.isArray(line) || line.length < 2) return null;
+            return line.map(([lng, lat]) => ({ lat, lng }));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    startManualMovementLoop() {
+        if (!this.selectedVehicle) return;
+        if (this.controlInterval) return;
+        if (this.selectedVehicle.engineStatus === 'locked') return;
+
+        const tickMs = 400;
+        this.controlInterval = setInterval(() => {
+            if (!this.selectedVehicle) return;
+            if (this.pathFollowing) return;
+            if (this.selectedVehicle.engineStatus === 'locked' || this.selectedVehicle.engineStatus === 'off') return;
+            if (this.selectedVehicle.speed <= 0) return;
+
+            const speedKmh = this.selectedVehicle.speed;
+            const dtSec = tickMs / 1000;
+            const meters = (speedKmh * 1000 / 3600) * dtSec;
+
+            this.lastManualMoveHeadingDeg += (Math.random() - 0.5) * 12;
+            const headingRad = (this.lastManualMoveHeadingDeg * Math.PI) / 180;
+
+            const lat = this.selectedVehicle.lat;
+            const lng = this.selectedVehicle.lng;
+
+            const dLat = (meters * Math.cos(headingRad)) / 111320;
+            const dLng = (meters * Math.sin(headingRad)) / (111320 * Math.cos(lat * Math.PI / 180));
+
+            this.selectedVehicle.lat = lat + dLat;
+            this.selectedVehicle.lng = lng + dLng;
+            this.selectedVehicle.status = 'moving';
+            this.selectedVehicle.engineStatus = 'on';
+
+            if (this.markers.vehicle) {
+                this.markers.vehicle.setLatLng([this.selectedVehicle.lat, this.selectedVehicle.lng]);
+            }
+
+            if (this.map) {
+                this.map.panTo([this.selectedVehicle.lat, this.selectedVehicle.lng], { animate: true, duration: 0.25 });
+            }
+
+            this.updateStatusDisplay();
+            this.saveToLocalStorage();
+            this.broadcastVehicleUpdate();
+        }, tickMs);
+    }
+
+    stopManualMovementLoop() {
+        if (this.controlInterval) {
+            clearInterval(this.controlInterval);
+            this.controlInterval = null;
+        }
     }
 }
 

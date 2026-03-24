@@ -57,8 +57,8 @@ class TransportManager {
                     
                     // Clear any existing traveled path polylines for normal users
                     Object.values(this.polylines).forEach(polyline => {
-                        if (polyline && polyline.setMap) {
-                            polyline.setMap(null);
+                        if (polyline) {
+                            try { this.map.removeLayer(polyline); } catch (_) {}
                         }
                     });
                     this.polylines = {};
@@ -100,8 +100,8 @@ class TransportManager {
                 this.selectVehicle(vehicle.id);
                 // Center map on selected vehicle
                 if (this.markers[vehicle.id]) {
-                    this.map.setCenter(this.markers[vehicle.id].getPosition());
-                    this.map.setZoom(15);
+                    const ll = this.markers[vehicle.id].getLatLng();
+                    this.map.setView([ll.lat, ll.lng], 15);
                 }
             });
             
@@ -154,29 +154,17 @@ class TransportManager {
     initMap() {
         // Default center (you can change this to your school location)
         const defaultCenter = { lat: 17.6868, lng: 83.2185 }; // Visakhapatnam
-        
-        this.map = new google.maps.Map(document.getElementById('map'), {
-            zoom: 13,
-            center: defaultCenter,
-            mapTypeId: 'roadmap',
-            styles: [
-                {
-                    featureType: 'all',
-                    elementType: 'geometry',
-                    stylers: [{ color: '#1e293b' }]
-                },
-                {
-                    featureType: 'all',
-                    elementType: 'labels.text.fill',
-                    stylers: [{ color: '#94a3b8' }]
-                },
-                {
-                    featureType: 'water',
-                    elementType: 'geometry',
-                    stylers: [{ color: '#0f172a' }]
-                }
-            ]
-        });
+
+        this.map = L.map('map', { zoomControl: true }).setView(
+            [defaultCenter.lat, defaultCenter.lng],
+            13
+        );
+
+        // OSM tiles (no API key)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(this.map);
     }
 
     loadVehicles() {
@@ -291,27 +279,20 @@ class TransportManager {
         this.vehicles.forEach(vehicle => {
             if (!this.markers[vehicle.id]) {
                 // Create new marker
-                const marker = new google.maps.Marker({
-                    position: { lat: vehicle.lat, lng: vehicle.lng },
-                    map: this.map,
+                const marker = L.marker([vehicle.lat, vehicle.lng], {
                     title: vehicle.name,
                     icon: this.getMarkerIcon(vehicle)
-                });
+                }).addTo(this.map);
 
-                // Add info window
-                const infoWindow = new google.maps.InfoWindow({
-                    content: this.getInfoWindowContent(vehicle)
-                });
-
-                marker.addListener('click', () => {
-                    infoWindow.open(this.map, marker);
+                marker.on('click', () => {
+                    marker.bindPopup(this.getInfoWindowContent(vehicle)).openPopup();
                     this.selectVehicle(vehicle.id);
                 });
 
                 this.markers[vehicle.id] = marker;
             } else {
                 // Update existing marker
-                this.markers[vehicle.id].setPosition({ lat: vehicle.lat, lng: vehicle.lng });
+                this.markers[vehicle.id].setLatLng([vehicle.lat, vehicle.lng]);
                 this.markers[vehicle.id].setIcon(this.getMarkerIcon(vehicle));
             }
 
@@ -341,11 +322,11 @@ class TransportManager {
             </svg>
         `;
         
-        return {
-            url: `data:image/svg+xml;base64,${btoa(svgIcon)}`,
-            scaledSize: new google.maps.Size(40, 40),
-            anchor: new google.maps.Point(20, 20)
-        };
+        return L.icon({
+            iconUrl: `data:image/svg+xml;base64,${btoa(svgIcon)}`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
     }
 
     getInfoWindowContent(vehicle) {
@@ -365,18 +346,14 @@ class TransportManager {
         if (vehicle.routeHistory.length < 2) return;
 
         if (!this.polylines[vehicle.id]) {
-            this.polylines[vehicle.id] = new google.maps.Polyline({
-                path: vehicle.routeHistory.map(p => ({ lat: p.lat, lng: p.lng })),
-                geodesic: true,
-                strokeColor: vehicle.status === 'overspeed' ? '#ef4444' : '#10b981',
-                strokeOpacity: 0.6,
-                strokeWeight: 3,
-                map: this.map
-            });
+            const latLngs = vehicle.routeHistory.map(p => [p.lat, p.lng]);
+            this.polylines[vehicle.id] = L.polyline(latLngs, {
+                color: vehicle.status === 'overspeed' ? '#ef4444' : '#10b981',
+                opacity: 0.6,
+                weight: 3
+            }).addTo(this.map);
         } else {
-            this.polylines[vehicle.id].setPath(
-                vehicle.routeHistory.map(p => ({ lat: p.lat, lng: p.lng }))
-            );
+            this.polylines[vehicle.id].setLatLngs(vehicle.routeHistory.map(p => [p.lat, p.lng]));
         }
     }
 
@@ -391,8 +368,8 @@ class TransportManager {
 
         // Center map on vehicle
         if (this.markers[vehicleId]) {
-            this.map.setCenter(this.markers[vehicleId].getPosition());
-            this.map.setZoom(15);
+            const ll = this.markers[vehicleId].getLatLng();
+            this.map.setView([ll.lat, ll.lng], 15);
         }
 
         // Update vehicle details
@@ -474,10 +451,7 @@ class TransportManager {
 
     checkGeoFence(vehicle) {
         for (const fence of this.geoFences) {
-            const distance = google.maps.geometry.spherical.computeDistanceBetween(
-                new google.maps.LatLng(vehicle.lat, vehicle.lng),
-                new google.maps.LatLng(fence.lat, fence.lng)
-            );
+            const distance = this.distanceMeters(vehicle.lat, vehicle.lng, fence.lat, fence.lng);
             
             if (distance > fence.radius) {
                 this.addAlert('danger', `${vehicle.id} has left the geo-fence: ${fence.name}`);
@@ -485,6 +459,17 @@ class TransportManager {
             }
         }
         return 'Inside';
+    }
+
+    distanceMeters(lat1, lng1, lat2, lng2) {
+        const R = 6371000; // meters
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 
     startRealTimeUpdates() {
@@ -856,15 +841,17 @@ class TransportManager {
         // Map controls
         document.getElementById('centerMapBtn').addEventListener('click', () => {
             if (this.selectedVehicle && this.markers[this.selectedVehicle.id]) {
-                this.map.setCenter(this.markers[this.selectedVehicle.id].getPosition());
-                this.map.setZoom(15);
+                const ll = this.markers[this.selectedVehicle.id].getLatLng();
+                this.map.setView([ll.lat, ll.lng], 15);
             } else {
                 this.map.setZoom(13);
             }
         });
 
         document.getElementById('clearRouteBtn').addEventListener('click', () => {
-            Object.values(this.polylines).forEach(polyline => polyline.setMap(null));
+            Object.values(this.polylines).forEach(polyline => {
+                try { this.map.removeLayer(polyline); } catch (_) {}
+            });
             this.polylines = {};
             this.vehicles.forEach(v => v.routeHistory = []);
             this.addAlert('info', 'Route history cleared');
@@ -877,14 +864,18 @@ class TransportManager {
 
         // Show route button
         document.getElementById('showRouteBtn').addEventListener('click', () => {
-            if (this.selectedVehicle && this.vehiclePaths[this.selectedVehicle.id]) {
+            if (this.selectedVehicle) {
                 this.drawRoutesFromPaths();
-                // Center map on route
-                const path = this.vehiclePaths[this.selectedVehicle.id];
-                if (path.length > 0) {
-                    const bounds = new google.maps.LatLngBounds();
-                    path.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
-                    this.map.fitBounds(bounds);
+
+                // Center map on first available route for this vehicle
+                const vehicleRoutes = Object.keys(this.vehiclePaths).filter(k =>
+                    this.vehiclePaths[k]?.vehicleId === this.selectedVehicle.id
+                );
+                const first = vehicleRoutes.length > 0 ? this.vehiclePaths[vehicleRoutes[0]] : null;
+                const pts = first?.points || [];
+                if (pts.length > 0) {
+                    const bounds = L.latLngBounds(pts.map(p => [p.lat, p.lng]));
+                    this.map.fitBounds(bounds, { padding: [20, 20] });
                 }
                 this.addAlert('info', `Route displayed for ${this.selectedVehicle.id}`);
             } else {
@@ -958,8 +949,8 @@ class TransportManager {
             document.getElementById('fenceLng').value = this.selectedVehicle.lng;
         } else {
             const center = this.map.getCenter();
-            document.getElementById('fenceLat').value = center.lat();
-            document.getElementById('fenceLng').value = center.lng();
+            document.getElementById('fenceLat').value = center.lat;
+            document.getElementById('fenceLng').value = center.lng;
         }
     }
 
@@ -978,16 +969,14 @@ class TransportManager {
         this.geoFences.push(fence);
 
         // Draw circle on map
-        const circle = new google.maps.Circle({
-            strokeColor: '#FF0000',
-            strokeOpacity: 0.8,
-            strokeWeight: 2,
+        const circle = L.circle([lat, lng], {
+            radius: radius,
+            color: '#FF0000',
+            weight: 2,
+            opacity: 0.8,
             fillColor: '#FF0000',
-            fillOpacity: 0.15,
-            map: this.map,
-            center: { lat, lng },
-            radius: radius
-        });
+            fillOpacity: 0.15
+        }).addTo(this.map);
 
         fence.circle = circle;
 
@@ -1021,7 +1010,7 @@ class TransportManager {
         // Remove all geo-fence circles from map
         this.geoFences.forEach(fence => {
             if (fence.circle) {
-                fence.circle.setMap(null);
+                try { this.map.removeLayer(fence.circle); } catch (_) {}
             }
         });
         
@@ -1126,126 +1115,90 @@ class TransportManager {
     }
 
     drawRoutesFromPaths() {
-        // Clear existing route polylines and directions renderers
-        Object.values(this.routePolylines).forEach(polyline => {
-            if (polyline && polyline.setMap) polyline.setMap(null);
+        // Clear existing route polylines
+        Object.values(this.routePolylines).forEach(layer => {
+            if (layer) {
+                try { this.map.removeLayer(layer); } catch (_) {}
+            }
         });
         this.routePolylines = {};
-        
-        // Initialize Directions Service if not exists
-        if (!this.directionsService) {
-            this.directionsService = new google.maps.DirectionsService();
-        }
-        
-        // Draw routes for each vehicle/route combination using Directions Service for road-snapped paths
+
+        // Clear existing route start/end markers (keep vehicle markers)
+        Object.keys(this.markers).forEach((key) => {
+            if (key.endsWith('_start') || key.endsWith('_end')) {
+                try { this.map.removeLayer(this.markers[key]); } catch (_) {}
+                delete this.markers[key];
+            }
+        });
+
         Object.keys(this.vehiclePaths).forEach(pathKey => {
             const pathData = this.vehiclePaths[pathKey];
-            const path = pathData.points;
+            const path = pathData.points || [];
             const vehicleId = pathData.vehicleId;
-            
+
             if (path.length < 2) return;
-            
-            // Use Directions Service to get road-snapped route
-            const waypoints = [];
-            for (let i = 1; i < path.length - 1; i++) {
-                waypoints.push({
-                    location: new google.maps.LatLng(path[i].lat, path[i].lng),
-                    stopover: false
-                });
-            }
-            
-            const request = {
-                origin: new google.maps.LatLng(path[0].lat, path[0].lng),
-                destination: new google.maps.LatLng(
-                    path[path.length - 1].lat,
-                    path[path.length - 1].lng
-                ),
-                waypoints: waypoints,
-                travelMode: google.maps.TravelMode.DRIVING,
-                optimizeWaypoints: false
-            };
-            
-            this.directionsService.route(request, (result, status) => {
-                if (status === 'OK') {
-                    // Create directions renderer for this path (support multiple paths per vehicle)
-                    if (!this.routePolylines[pathKey]) {
-                        this.routePolylines[pathKey] = new google.maps.DirectionsRenderer({
-                            map: this.map,
-                            directions: result,
-                            suppressMarkers: true,
-                            polylineOptions: {
-                                strokeColor: '#4A90E2',
-                                strokeWeight: 4,
-                                strokeOpacity: 0.8
-                            }
-                        });
-                    } else {
-                        this.routePolylines[pathKey].setDirections(result);
-                    }
-                    
-                    // Add start and end markers (use pathKey to support multiple paths)
+
+            // Prefer OSRM-snapped route. Fallback to direct polyline.
+            this.getOsrmRouteCoords(path)
+                .then((coords) => {
+                    const latLngs = (coords && coords.length > 1)
+                        ? coords.map(ll => [ll.lat, ll.lng])
+                        : path.map(p => [p.lat, p.lng]);
+
+                    this.routePolylines[pathKey] = L.polyline(latLngs, {
+                        color: '#4A90E2',
+                        weight: 4,
+                        opacity: 0.8
+                    }).addTo(this.map);
+
                     const startPoint = path[0];
                     const endPoint = path[path.length - 1];
-                    
-                    // Start marker (green)
+
                     const startMarkerKey = `${pathKey}_start`;
-                    if (!this.markers[startMarkerKey]) {
-                        this.markers[startMarkerKey] = new google.maps.Marker({
-                            position: { lat: startPoint.lat, lng: startPoint.lng },
-                            map: this.map,
-                            title: `${vehicleId} - ${pathData.routeName} - Start`,
-                            icon: {
-                                path: google.maps.SymbolPath.CIRCLE,
-                                scale: 12,
-                                fillColor: '#10b981',
-                                fillOpacity: 1,
-                                strokeColor: 'white',
-                                strokeWeight: 2
-                            },
-                            label: {
-                                text: 'S',
-                                color: 'white',
-                                fontWeight: 'bold'
-                            }
-                        });
-                    }
-                    
-                    // End marker (red)
+                    this.markers[startMarkerKey] = L.circleMarker([startPoint.lat, startPoint.lng], {
+                        radius: 10,
+                        color: 'white',
+                        weight: 2,
+                        fillColor: '#10b981',
+                        fillOpacity: 1
+                    }).addTo(this.map).bindTooltip('S', { permanent: true, direction: 'center' });
+                    this.markers[startMarkerKey].bindPopup(`${vehicleId} - ${pathData.routeName} - Start`);
+
                     const endMarkerKey = `${pathKey}_end`;
-                    if (!this.markers[endMarkerKey]) {
-                        this.markers[endMarkerKey] = new google.maps.Marker({
-                            position: { lat: endPoint.lat, lng: endPoint.lng },
-                            map: this.map,
-                            title: `${vehicleId} - ${pathData.routeName} - Destination`,
-                            icon: {
-                                path: google.maps.SymbolPath.CIRCLE,
-                                scale: 12,
-                                fillColor: '#ef4444',
-                                fillOpacity: 1,
-                                strokeColor: 'white',
-                                strokeWeight: 2
-                            },
-                            label: {
-                                text: 'E',
-                                color: 'white',
-                                fontWeight: 'bold'
-                            }
-                        });
-                    }
-                } else {
-                    // Fallback to simple polyline if directions fail
-                    const routePath = path.map(p => ({ lat: p.lat, lng: p.lng }));
-                    this.routePolylines[pathKey] = new google.maps.Polyline({
-                        path: routePath,
-                        geodesic: true,
-                        strokeColor: '#4A90E2',
-                        strokeOpacity: 0.8,
-                        strokeWeight: 4,
-                        map: this.map
-                    });
-                }
-            });
+                    this.markers[endMarkerKey] = L.circleMarker([endPoint.lat, endPoint.lng], {
+                        radius: 10,
+                        color: 'white',
+                        weight: 2,
+                        fillColor: '#ef4444',
+                        fillOpacity: 1
+                    }).addTo(this.map).bindTooltip('E', { permanent: true, direction: 'center' });
+                    this.markers[endMarkerKey].bindPopup(`${vehicleId} - ${pathData.routeName} - Destination`);
+                })
+                .catch(() => {
+                    const latLngs = path.map(p => [p.lat, p.lng]);
+                    this.routePolylines[pathKey] = L.polyline(latLngs, {
+                        color: '#4A90E2',
+                        weight: 4,
+                        opacity: 0.8
+                    }).addTo(this.map);
+                });
         });
+    }
+
+    async getOsrmRouteCoords(points) {
+        try {
+            if (!points || points.length < 2) return null;
+            const coordsStr = points.map(p => `${p.lng},${p.lat}`).join(';');
+            const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+            const res = await fetch(url);
+            if (!res.ok) return null;
+            const data = await res.json();
+            const line = data?.routes?.[0]?.geometry?.coordinates;
+            if (!Array.isArray(line) || line.length < 2) return null;
+            return line.map(([lng, lat]) => ({ lat, lng }));
+        } catch (_) {
+            return null;
+        }
     }
     
     // Load paths from controller/localStorage for user panel
