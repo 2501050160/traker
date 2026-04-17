@@ -24,6 +24,7 @@
                 <p class="subtitle">Control Vehicle Movement, Speed & Path</p>
             </div>
             <div class="header-actions">
+                <button class="btn btn-primary" id="serialMonitorPageBtn">📟 Serial Monitor</button>
                 <button class="btn btn-primary" id="loadExcelBtn">📂 Load from Excel</button>
                 <button class="btn btn-secondary" id="saveToExcelBtn">💾 Save to Excel</button>
                 <button class="btn btn-warning" id="dashboardBtn">📊 View Dashboard</button>
@@ -213,9 +214,38 @@
                         <!-- Logs will be added here -->
                     </div>
                 </div>
+
             </aside>
         </div>
     </div>
+
+    <aside class="embedded-serial-panel" id="embeddedSerialPanel">
+        <div class="embedded-serial-header">
+            <h2>Serial Monitor</h2>
+            <button class="embedded-close-btn" id="closeSerialPanelBtn">✕</button>
+        </div>
+        <div class="serial-controls">
+            <div class="form-group">
+                <label for="baudRateInput">Baud Rate</label>
+                <input type="number" id="baudRateInput" value="9600" min="300" step="300">
+            </div>
+            <div class="serial-actions">
+                <button class="control-btn" id="selectPortBtn" style="background: #2563eb;">🔌 Select Port</button>
+                <button class="control-btn" id="connectSerialBtn" style="background: #10b981;">▶ Connect</button>
+                <button class="control-btn" id="disconnectSerialBtn" style="background: #ef4444;">⏹ Disconnect</button>
+            </div>
+            <div class="serial-send-actions">
+                <button class="control-btn serial-send-btn" id="sendCmd1Btn" data-cmd="1">1</button>
+                <button class="control-btn serial-send-btn" id="sendCmd2Btn" data-cmd="2">2</button>
+                <button class="control-btn serial-send-btn" id="sendCmd3Btn" data-cmd="3">3</button>
+                <button class="control-btn serial-send-btn" id="sendCmd4Btn" data-cmd="4">4</button>
+            </div>
+            <div class="serial-status" id="serialStatus">Status: Disconnected</div>
+            <div class="serial-monitor" id="serialMonitorOutput" aria-live="polite">
+                Waiting for serial data...
+            </div>
+        </div>
+    </aside>
 
     <script>
         // Authentication check - Controller is admin-only

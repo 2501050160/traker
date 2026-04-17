@@ -338,6 +338,148 @@
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
 }
 
+.serial-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.serial-controls input {
+    width: 100%;
+    padding: 0.75rem;
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.serial-controls input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.serial-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+}
+
+.serial-send-actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+
+.serial-send-btn {
+    padding: 0.6rem 0.4rem;
+    background: rgba(37, 99, 235, 0.2);
+    border: 1px solid var(--primary-color);
+    color: var(--text-primary);
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.serial-send-btn:hover {
+    transform: translateY(-2px);
+    background: rgba(37, 99, 235, 0.35);
+}
+
+.serial-status {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.serial-monitor {
+    min-height: 160px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(15, 23, 42, 0.75);
+    color: #93c5fd;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.serial-only-panel {
+    overflow: hidden;
+}
+
+.serial-panel-main {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.serial-panel-main .serial-controls {
+    flex: 1;
+    min-height: 0;
+}
+
+.serial-panel-main .serial-monitor {
+    flex: 1;
+    max-height: none;
+}
+
+.embedded-serial-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(420px, 95vw);
+    height: 100vh;
+    background: #0f172a;
+    border-left: 1px solid var(--border-color);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+    z-index: 5000;
+    padding: 1rem;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.embedded-serial-panel.open {
+    transform: translateX(0);
+}
+
+.embedded-serial-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.embedded-serial-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.embedded-close-btn {
+    border: none;
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+    padding: 0.45rem 0.65rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.embedded-serial-panel .serial-controls {
+    flex: 1;
+    min-height: 0;
+}
+
+.embedded-serial-panel .serial-monitor {
+    flex: 1;
+    max-height: none;
+}
+
 .route-info h3 {
     margin: 0 0 1rem 0;
     color: var(--text-primary);

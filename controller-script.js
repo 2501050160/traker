@@ -27,6 +27,21 @@ class VehicleController {
         this.drawHandler = null;
         this.isSettingPosition = false;
         this.lastManualMoveHeadingDeg = 45; // used when moving without a route
+        this.serialPort = null;
+        this.serialReader = null;
+        this.serialReadLoopActive = false;
+        this.serialBuffer = '';
+        this.chennaiRoamInterval = null;
+        this.chennaiBounds = {
+            minLat: 12.82,
+            maxLat: 13.20,
+            minLng: 80.10,
+            maxLng: 80.35
+        };
+        this.serialTargetLocation = {
+            lat: 12.870497,
+            lng: 80.219833
+        };
         
         this.init();
     }
@@ -40,6 +55,9 @@ class VehicleController {
         this.createAlertContainer();
         this.startControllerArrivalTimeUpdates();
         this.loadSavedRoutesFromStorage();
+        this.initSerialMonitor();
+        this.initVehicleRoamingState();
+        this.startChennaiRoamingLoop();
     }
 
     initMap() {
@@ -120,6 +138,7 @@ class VehicleController {
         // Update vehicle position
         this.selectedVehicle.lat = latLng.lat;
         this.selectedVehicle.lng = latLng.lng;
+        this.selectedVehicle.roamingEnabled = false;
         
         // Update manual position inputs
         document.getElementById('manualLat').value = latLng.lat.toFixed(6);
@@ -180,7 +199,9 @@ class VehicleController {
                 lng: 83.2185,
                 speed: 0,
                 status: 'stopped',
-                engineStatus: 'off'
+                engineStatus: 'off',
+                roamingEnabled: true,
+                roamingHeading: Math.random() * 360
             },
             {
                 id: 'BUS-002',
@@ -189,7 +210,9 @@ class VehicleController {
                 lng: 83.2200,
                 speed: 0,
                 status: 'stopped',
-                engineStatus: 'off'
+                engineStatus: 'off',
+                roamingEnabled: true,
+                roamingHeading: Math.random() * 360
             },
             {
                 id: 'BUS-003',
@@ -198,7 +221,9 @@ class VehicleController {
                 lng: 83.2150,
                 speed: 0,
                 status: 'stopped',
-                engineStatus: 'off'
+                engineStatus: 'off',
+                roamingEnabled: true,
+                roamingHeading: Math.random() * 360
             }
         ];
     }
@@ -312,6 +337,7 @@ class VehicleController {
             if (lat && lng && this.selectedVehicle) {
                 this.selectedVehicle.lat = lat;
                 this.selectedVehicle.lng = lng;
+                this.selectedVehicle.roamingEnabled = false;
                 if (this.markers.vehicle) {
                     this.markers.vehicle.setLatLng([lat, lng]);
                 }
@@ -326,6 +352,7 @@ class VehicleController {
             if (lat && lng && this.selectedVehicle) {
                 this.selectedVehicle.lat = lat;
                 this.selectedVehicle.lng = lng;
+                this.selectedVehicle.roamingEnabled = false;
                 if (this.markers.vehicle) {
                     this.markers.vehicle.setLatLng([lat, lng]);
                 }
@@ -359,6 +386,312 @@ class VehicleController {
         document.getElementById('vehicleIconInput').addEventListener('change', (e) => {
             this.handleIconUpload(e);
         });
+
+        // Serial monitor controls
+        const selectPortBtn = document.getElementById('selectPortBtn');
+        const connectSerialBtn = document.getElementById('connectSerialBtn');
+        const disconnectSerialBtn = document.getElementById('disconnectSerialBtn');
+        if (selectPortBtn && connectSerialBtn && disconnectSerialBtn) {
+            selectPortBtn.addEventListener('click', () => this.selectSerialPort());
+            connectSerialBtn.addEventListener('click', () => this.connectSerial());
+            disconnectSerialBtn.addEventListener('click', () => this.disconnectSerial());
+        }
+
+        const serialMonitorPageBtn = document.getElementById('serialMonitorPageBtn');
+        if (serialMonitorPageBtn) {
+            serialMonitorPageBtn.addEventListener('click', () => this.toggleSerialPanel());
+        }
+
+        const closeSerialPanelBtn = document.getElementById('closeSerialPanelBtn');
+        if (closeSerialPanelBtn) {
+            closeSerialPanelBtn.addEventListener('click', () => this.toggleSerialPanel(false));
+        }
+
+        // Serial send command buttons (1/2/3/4)
+        const sendCmd1Btn = document.getElementById('sendCmd1Btn');
+        const sendCmd2Btn = document.getElementById('sendCmd2Btn');
+        const sendCmd3Btn = document.getElementById('sendCmd3Btn');
+        const sendCmd4Btn = document.getElementById('sendCmd4Btn');
+
+        if (sendCmd1Btn) sendCmd1Btn.addEventListener('click', () => this.sendSerialCommand('1'));
+        if (sendCmd2Btn) sendCmd2Btn.addEventListener('click', () => this.sendSerialCommand('2'));
+        if (sendCmd3Btn) sendCmd3Btn.addEventListener('click', () => this.sendSerialCommand('3'));
+        if (sendCmd4Btn) sendCmd4Btn.addEventListener('click', () => this.sendSerialCommand('4'));
+    }
+
+    toggleSerialPanel(forceState) {
+        const panel = document.getElementById('embeddedSerialPanel');
+        if (!panel) return;
+
+        const shouldOpen = typeof forceState === 'boolean'
+            ? forceState
+            : !panel.classList.contains('open');
+        panel.classList.toggle('open', shouldOpen);
+    }
+
+    initSerialMonitor() {
+        if (!('serial' in navigator)) {
+            this.updateSerialStatus('Web Serial not supported in this browser');
+            this.appendSerialOutput('[INFO] Use Chrome or Edge for serial monitor support.');
+            return;
+        }
+        this.updateSerialStatus('Status: Disconnected');
+        this.appendSerialOutput('[INFO] Serial monitor ready. Select port and connect.');
+    }
+
+    updateSerialStatus(message) {
+        const statusEl = document.getElementById('serialStatus');
+        if (statusEl) {
+            statusEl.textContent = message;
+        }
+    }
+
+    appendSerialOutput(text) {
+        const outputEl = document.getElementById('serialMonitorOutput');
+        if (!outputEl) return;
+
+        const hasPlaceholder = outputEl.textContent.trim() === 'Waiting for serial data...';
+        if (hasPlaceholder) {
+            outputEl.textContent = '';
+        }
+
+        const time = new Date().toLocaleTimeString();
+        outputEl.textContent += `[${time}] ${text}\n`;
+        outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    async selectSerialPort() {
+        if (!('serial' in navigator)) {
+            this.showAlert('error', 'Web Serial is not supported in this browser');
+            return;
+        }
+
+        try {
+            this.serialPort = await navigator.serial.requestPort();
+            this.updateSerialStatus('Status: Port selected');
+            this.appendSerialOutput('[INFO] Serial port selected.');
+            this.addLog('success', 'Serial port selected');
+        } catch (error) {
+            if (error && error.name !== 'NotFoundError') {
+                this.appendSerialOutput(`[ERROR] Port selection failed: ${error.message}`);
+                this.addLog('error', `Serial port selection failed: ${error.message}`);
+            }
+        }
+    }
+
+    async connectSerial() {
+        if (!('serial' in navigator)) {
+            this.showAlert('error', 'Web Serial is not supported in this browser');
+            return;
+        }
+
+        if (!this.serialPort) {
+            this.showAlert('warning', 'Please select a serial port first');
+            return;
+        }
+
+        const baudInput = document.getElementById('baudRateInput');
+        const baudRate = parseInt(baudInput?.value, 10) || 9600;
+
+        try {
+            await this.serialPort.open({ baudRate });
+            this.serialReadLoopActive = true;
+            this.updateSerialStatus(`Status: Connected (${baudRate} baud)`);
+            this.appendSerialOutput(`[INFO] Connected at ${baudRate} baud.`);
+            this.addLog('success', `Serial connected at ${baudRate} baud`);
+            this.readSerialLoop();
+        } catch (error) {
+            this.updateSerialStatus('Status: Connection failed');
+            this.appendSerialOutput(`[ERROR] Connection failed: ${error.message}`);
+            this.addLog('error', `Serial connection failed: ${error.message}`);
+        }
+    }
+
+    async readSerialLoop() {
+        if (!this.serialPort || !this.serialPort.readable) {
+            return;
+        }
+
+        try {
+            this.serialReader = this.serialPort.readable.getReader();
+            const decoder = new TextDecoder();
+
+            while (this.serialReadLoopActive) {
+                const { value, done } = await this.serialReader.read();
+                if (done) break;
+                if (!value) continue;
+
+                this.serialBuffer += decoder.decode(value, { stream: true });
+                const lines = this.serialBuffer.split(/\r?\n/);
+                this.serialBuffer = lines.pop() || '';
+                lines.forEach((line) => {
+                    if (line.trim()) {
+                        this.appendSerialOutput(line);
+                    }
+                });
+            }
+        } catch (error) {
+            if (this.serialReadLoopActive) {
+                this.appendSerialOutput(`[ERROR] Serial read error: ${error.message}`);
+                this.addLog('error', `Serial read error: ${error.message}`);
+            }
+        } finally {
+            if (this.serialReader) {
+                try {
+                    await this.serialReader.cancel();
+                } catch (_) {}
+                try {
+                    this.serialReader.releaseLock();
+                } catch (_) {}
+                this.serialReader = null;
+            }
+        }
+    }
+
+    async disconnectSerial() {
+        this.serialReadLoopActive = false;
+
+        if (this.serialReader) {
+            try {
+                await this.serialReader.cancel();
+            } catch (_) {}
+            try {
+                this.serialReader.releaseLock();
+            } catch (_) {}
+            this.serialReader = null;
+        }
+
+        if (this.serialPort) {
+            try {
+                await this.serialPort.close();
+                this.appendSerialOutput('[INFO] Serial disconnected.');
+            } catch (error) {
+                this.appendSerialOutput(`[ERROR] Disconnect issue: ${error.message}`);
+            }
+        }
+
+        this.updateSerialStatus('Status: Disconnected');
+        this.addLog('info', 'Serial disconnected');
+    }
+
+    async sendSerialCommand(cmd) {
+        if (String(cmd) === '4') {
+            this.applySerialCommandFourBehavior();
+        }
+
+        if (!('serial' in navigator)) return;
+
+        if (!this.serialPort || !this.serialPort.writable) {
+            this.appendSerialOutput('[WARN] Connect to a serial port first.');
+            return;
+        }
+
+        try {
+            const encoder = new TextEncoder();
+            const writer = this.serialPort.writable.getWriter();
+            await writer.write(encoder.encode(String(cmd)));
+            writer.releaseLock();
+            this.appendSerialOutput(`[TX] ${cmd}`);
+        } catch (error) {
+            this.appendSerialOutput(`[ERROR] Send failed: ${error.message}`);
+            this.addLog('error', `Serial send failed: ${error.message}`);
+        }
+    }
+
+    initVehicleRoamingState() {
+        this.vehicles.forEach((vehicle) => {
+            if (typeof vehicle.roamingEnabled !== 'boolean') {
+                vehicle.roamingEnabled = true;
+            }
+            if (typeof vehicle.roamingHeading !== 'number') {
+                vehicle.roamingHeading = Math.random() * 360;
+            }
+        });
+        this.saveToLocalStorage();
+    }
+
+    startChennaiRoamingLoop() {
+        if (this.chennaiRoamInterval) return;
+        const tickMs = 2000;
+        this.chennaiRoamInterval = setInterval(() => {
+            this.roamVehiclesInChennai(tickMs);
+        }, tickMs);
+    }
+
+    roamVehiclesInChennai(tickMs) {
+        let didUpdate = false;
+        this.vehicles.forEach((vehicle) => {
+            if (!vehicle.roamingEnabled) return;
+            if (this.selectedVehicle && this.selectedVehicle.id === vehicle.id && this.pathFollowing) return;
+
+            const speedKmh = 18 + Math.random() * 18;
+            const dtSec = tickMs / 1000;
+            const meters = (speedKmh * 1000 / 3600) * dtSec;
+
+            vehicle.roamingHeading += (Math.random() - 0.5) * 30;
+            const headingRad = (vehicle.roamingHeading * Math.PI) / 180;
+            const safeCos = Math.max(0.2, Math.cos((vehicle.lat * Math.PI) / 180));
+
+            const dLat = (meters * Math.cos(headingRad)) / 111320;
+            const dLng = (meters * Math.sin(headingRad)) / (111320 * safeCos);
+
+            let nextLat = vehicle.lat + dLat;
+            let nextLng = vehicle.lng + dLng;
+
+            if (nextLat < this.chennaiBounds.minLat || nextLat > this.chennaiBounds.maxLat) {
+                vehicle.roamingHeading = (180 - vehicle.roamingHeading + 360) % 360;
+                nextLat = Math.min(this.chennaiBounds.maxLat, Math.max(this.chennaiBounds.minLat, nextLat));
+            }
+            if (nextLng < this.chennaiBounds.minLng || nextLng > this.chennaiBounds.maxLng) {
+                vehicle.roamingHeading = (360 - vehicle.roamingHeading + 360) % 360;
+                nextLng = Math.min(this.chennaiBounds.maxLng, Math.max(this.chennaiBounds.minLng, nextLng));
+            }
+
+            vehicle.lat = nextLat;
+            vehicle.lng = nextLng;
+            vehicle.speed = Math.round(speedKmh);
+            vehicle.status = 'moving';
+            vehicle.engineStatus = 'on';
+            didUpdate = true;
+        });
+
+        if (!didUpdate) return;
+
+        if (this.selectedVehicle) {
+            const latest = this.vehicles.find(v => v.id === this.selectedVehicle.id);
+            if (latest) {
+                this.selectedVehicle = latest;
+                if (!this.pathFollowing) this.updateStatusDisplay();
+            }
+        }
+
+        this.saveToLocalStorage();
+        this.broadcastVehicleUpdate();
+    }
+
+    applySerialCommandFourBehavior() {
+        const targetIds = ['BUS-001', 'BUS-002', 'BUS-003'];
+        const availableVehicles = this.vehicles.filter(v => targetIds.includes(v.id));
+        if (availableVehicles.length === 0) return;
+
+        const randomVehicle = availableVehicles[Math.floor(Math.random() * availableVehicles.length)];
+        randomVehicle.lat = this.serialTargetLocation.lat;
+        randomVehicle.lng = this.serialTargetLocation.lng;
+        randomVehicle.status = 'moving';
+        randomVehicle.engineStatus = 'on';
+        randomVehicle.speed = randomVehicle.speed > 0 ? randomVehicle.speed : 25;
+        randomVehicle.roamingEnabled = true;
+
+        document.getElementById('vehicleSelect').value = randomVehicle.id;
+        this.selectVehicle(randomVehicle.id);
+        this.map.setView([randomVehicle.lat, randomVehicle.lng], 15);
+
+        const locMessage = `${randomVehicle.id} moved to 12°52'13.79" N, 80°13'11.40" E`;
+        this.showAlert('info', locMessage);
+        this.addLog('info', locMessage);
+        this.appendSerialOutput(`[INFO] ${locMessage}`);
+        this.saveToLocalStorage();
+        this.broadcastVehicleUpdate();
     }
 
     selectVehicle(vehicleId) {
@@ -396,7 +729,9 @@ class VehicleController {
             lng: 83.2185,
             speed: 0,
             status: 'stopped',
-            engineStatus: 'off'
+            engineStatus: 'off',
+            roamingEnabled: true,
+            roamingHeading: Math.random() * 360
         };
         
         this.vehicles.push(newVehicle);
@@ -1358,6 +1693,7 @@ class VehicleController {
 
         this.selectedVehicle.lat = lat;
         this.selectedVehicle.lng = lng;
+        this.selectedVehicle.roamingEnabled = false;
         
         // Update marker
         if (this.markers.vehicle) {
@@ -2260,6 +2596,11 @@ class VehicleController {
 // Initialize controller
 document.addEventListener('DOMContentLoaded', () => {
     window.vehicleController = new VehicleController();
+    window.addEventListener('beforeunload', () => {
+        if (window.vehicleController) {
+            window.vehicleController.disconnectSerial();
+        }
+    });
 });
 
 
